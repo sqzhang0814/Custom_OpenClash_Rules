@@ -21,7 +21,8 @@ jobs:
       - name: Generate files from upstream
         run: python3 scripts/update_config.py
       - name: Validate generated YAML
-        run: ruby -e 'require "yaml"; YAML.safe_load(File.read("cfg/yaml/Custom_Clash_Full.yaml"), aliases: true); puts "YAML valid"'
+        run: |
+          ruby -e 'require "yaml"; YAML.safe_load(File.read("cfg/yaml/Custom_Clash_Full.yaml"), aliases: true); puts "YAML valid"'
       - name: Commit changes when upstream changed
         run: |
           if git diff --quiet; then
