@@ -23,12 +23,12 @@ jobs:
       - name: Validate generated YAML
         run: |
           ruby -e 'require "yaml"; YAML.safe_load(File.read("cfg/yaml/Custom_Clash_Full.yaml"), aliases: true); puts "YAML valid"'
-      - name: Commit changes when upstream changed
-        run: |
-          if git diff --quiet; then
-            echo "No upstream change to commit."
-            exit 0
-          fi
+          - name: Commit changes when upstream changed
+            run: |
+              if [ -z "$(git status --porcelain)" ]; then
+                echo "No upstream change to commit."
+                exit 0
+              fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add cfg/yaml/Custom_Clash_Full.yaml overwrite/yaml/Custom_Clash_Full.conf upstream-source.json
