@@ -1,0 +1,9 @@
+# 个人规则：由 scripts/update_config.py 插入到生成 YAML 的 rules: 首部。
+# 修改这里后，在 GitHub Actions 手动运行 “Sync custom OpenClash YAML”。
+- "DOMAIN-SUFFIX,xn--ngstr-lra8j.com,DIRECT"
+- "DOMAIN-KEYWORD,m456,DIRECT"
+- "DOMAIN-KEYWORD,IPRoyal,DIRECT"
+- "DOMAIN-KEYWORD,synology,DIRECT"
+- "DOMAIN-KEYWORD,quickconnect,DIRECT"
+- "GEOSITE,giffgaff,🇬🇧 英国节点"
+- "DOMAIN,immortalwrt.org,🇭🇰 香港节点"
