@@ -13,14 +13,6 @@ from urllib.request import Request, urlopen
 ROOT = Path(__file__).resolve().parents[1]
 UPSTREAM_REPOSITORY = "Aethersailor/Custom_OpenClash_Rules"
 UPSTREAM_REF = "main"
-UPSTREAM_YAML_URL = (
-    f"https://raw.githubusercontent.com/{UPSTREAM_REPOSITORY}/{UPSTREAM_REF}/"
-    "cfg/yaml/Custom_Clash_Full.yaml"
-)
-UPSTREAM_CONF_URL = (
-    f"https://raw.githubusercontent.com/{UPSTREAM_REPOSITORY}/{UPSTREAM_REF}/"
-    "overwrite/yaml/Custom_Clash_Full.conf"
-)
 UPSTREAM_COMMIT_URL = (
     f"https://api.github.com/repos/{UPSTREAM_REPOSITORY}/commits/{UPSTREAM_REF}"
 )
@@ -69,6 +61,7 @@ BUSINESS_SELECT_GROUPS = (
     "🎥 AppleTV+",
     "🎥 Emby",
     "🎻 Spotify",
+    "📺 Bahamut",
     "🌎 国外媒体",
     "🛒 国外电商",
     "🪙 加密货币",
@@ -91,6 +84,10 @@ def fetch_text(url: str) -> str:
     request = Request(url, headers={"User-Agent": "sqzhang0814-Custom-OpenClash-Rules"})
     with urlopen(request, timeout=30) as response:  # nosec B310: fixed HTTPS URLs above
         return response.read().decode("utf-8")
+
+
+def raw_url(commit: str, path: str) -> str:
+    return f"https://raw.githubusercontent.com/{UPSTREAM_REPOSITORY}/{commit}/{path}"
 
 
 def group_block(yaml_text: str, group_name: str) -> str:
@@ -138,7 +135,7 @@ def read_custom_rules() -> list[str]:
     return rules
 
 
-def render_yaml(upstream_yaml: str, personal_rules: list[str]) -> str:
+def render_yaml(upstream_yaml: str, personal_rules: list[str], source_url: str) -> str:
     marker = "rules:\n"
     if "# Personal rules managed in custom-rules.yaml" in upstream_yaml:
         raise ValueError("Upstream source unexpectedly contains the local rules marker")
@@ -151,12 +148,12 @@ def render_yaml(upstream_yaml: str, personal_rules: list[str]) -> str:
     rendered = upstream_yaml.replace(marker, insertion, 1)
     return (
         "# GENERATED FILE — do not edit directly. Edit custom-rules.yaml instead.\n"
-        f"# Source: {UPSTREAM_YAML_URL}\n"
+        f"# Source: {source_url}\n"
         f"{rendered}"
     )
 
 
-def render_conf(upstream_conf: str) -> str:
+def render_conf(upstream_conf: str, source_url: str) -> str:
     required = ("[General]", "CONFIG_FILE", "SUB_INFO_URL", "ruby_map_edit")
     if any(token not in upstream_conf for token in required):
         raise ValueError("Upstream overwrite module no longer has the expected contract")
@@ -174,7 +171,7 @@ def render_conf(upstream_conf: str) -> str:
         raise ValueError("Could not replace the YAML download URL in upstream overwrite module")
     return (
         "# GENERATED FILE — source module is synchronized by GitHub Actions.\n"
-        f"# Source: {UPSTREAM_CONF_URL}\n"
+        f"# Source: {source_url}\n"
         f"{rendered}"
     )
 
@@ -187,13 +184,17 @@ def write_text(path: Path, text: str) -> None:
 
 
 def main() -> None:
-    upstream_yaml = fetch_text(UPSTREAM_YAML_URL)
-    upstream_conf = fetch_text(UPSTREAM_CONF_URL)
     commit = json.loads(fetch_text(UPSTREAM_COMMIT_URL))["sha"]
+    if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise ValueError("Upstream API returned an invalid commit SHA")
+    yaml_url = raw_url(commit, "cfg/yaml/Custom_Clash_Full.yaml")
+    conf_url = raw_url(commit, "overwrite/yaml/Custom_Clash_Full.conf")
+    upstream_yaml = fetch_text(yaml_url)
+    upstream_conf = fetch_text(conf_url)
     validate_upstream_yaml(upstream_yaml)
     personal_rules = read_custom_rules()
-    write_text(OUTPUT_YAML, render_yaml(upstream_yaml, personal_rules))
-    write_text(OUTPUT_CONF, render_conf(upstream_conf))
+    write_text(OUTPUT_YAML, render_yaml(upstream_yaml, personal_rules, yaml_url))
+    write_text(OUTPUT_CONF, render_conf(upstream_conf, conf_url))
     metadata = {
         "upstream_repository": UPSTREAM_REPOSITORY,
         "upstream_commit": commit,
