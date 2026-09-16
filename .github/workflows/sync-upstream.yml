@@ -23,6 +23,7 @@ jobs:
       - name: Validate generated YAML
         run: |
           ruby -e 'require "yaml"; YAML.safe_load(File.read("cfg/yaml/Custom_Clash_Full.yaml"), aliases: true); puts "YAML valid"'
+          ruby -e 'require "yaml"; YAML.safe_load(File.read("cfg/yaml/Custom_Clash_Full_Apple.yaml"), aliases: true); puts "Apple YAML valid"'
       - name: Commit changes when upstream changed
         run: |
           if [ -z "$(git status --porcelain)" ]; then
@@ -31,6 +32,6 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add cfg/yaml/Custom_Clash_Full.yaml overwrite/yaml/Custom_Clash_Full.conf upstream-source.json
+          git add cfg/yaml/Custom_Clash_Full.yaml overwrite/yaml/Custom_Clash_Full.conf cfg/yaml/Custom_Clash_Full_Apple.yaml overwrite/yaml/Custom_Clash_Full_Apple.conf upstream-source.json
           git commit -m "chore(sync): update custom OpenClash files"
           git push
