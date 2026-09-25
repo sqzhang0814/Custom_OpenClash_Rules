@@ -18,6 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Check generator regressions
+        run: python3 -m unittest discover -s tests -v
       - name: Generate files from upstream
         run: python3 scripts/update_config.py
       - name: Validate generated YAML

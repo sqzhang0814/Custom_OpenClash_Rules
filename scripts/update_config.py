@@ -70,7 +70,7 @@ REGION_GROUPS = (
 )
 
 # These are the groups in which a user must be able to choose a region or an
-# individual provider node.  The upstream template supplies the latter via use.
+# individual provider node. The generator maintains provider1 in their use lists.
 BUSINESS_SELECT_GROUPS = (
     "🚀 手动选择",
     "💬 即时通讯",
@@ -128,7 +128,7 @@ def group_block(yaml_text: str, group_name: str) -> str:
         raise ValueError(f"Upstream contains duplicate proxy group: {group_name}")
     start = matches[0].start()
     following = re.search(
-        r'^  - name: ', yaml_text[matches[0].end() :], flags=re.MULTILINE
+        r'^  - name: |^[A-Za-z][\w-]*:', yaml_text[matches[0].end() :], flags=re.MULTILINE
     )
     end = matches[0].end() + following.start() if following else len(yaml_text)
     if end <= start:
@@ -165,10 +165,66 @@ def validate_upstream_yaml(yaml_text: str) -> None:
 
     for name in BUSINESS_SELECT_GROUPS:
         block = group_block(yaml_text, name)
-        if "    type: select\n" not in block or "    use:\n      - provider1\n" not in block:
-            raise ValueError(
-                f"Business group must remain selectable and expose provider nodes: {name}"
+        if "    type: select\n" not in block:
+            raise ValueError(f"Business group must remain selectable: {name}")
+
+
+def business_use_list(block: str, name: str) -> tuple[int, list[str]] | None:
+    """Read the supported block-list syntax without reserializing upstream YAML.
+
+    Return an insertion position after the last item. Reject ambiguous or new
+    syntax rather than risk replacing another provider or duplicating a YAML key.
+    """
+    headers = list(re.finditer(r'''^    (?:use|"use"|'use')\s*:.*$''', block, re.MULTILINE))
+    if not headers:
+        return None
+    if len(headers) != 1 or not re.fullmatch(r"    use:[ \t]*(?:#.*)?", headers[0].group()):
+        raise ValueError(f"Unsupported or duplicate use field in business group: {name}")
+    start = headers[0].end() + 1
+    following = re.search(r"^    [^\s#]", block[start:], re.MULTILINE)
+    end = start + following.start() if following else len(block)
+    providers: list[str] = []
+    insertion = start
+    offset = start
+    for line in block[start:end].splitlines(keepends=True):
+        if line.strip() and not line.lstrip().startswith("#"):
+            match = re.fullmatch(
+                r'''      - (?:([\w.-]+)|"([\w.-]+)"|'([\w.-]+)')[ \t]*(?:#.*)?\n''',
+                line,
             )
+            if not match:
+                raise ValueError(f"Unsupported use list in business group: {name}")
+            providers.append(next(value for value in match.groups() if value is not None))
+            insertion = offset + len(line)
+        offset += len(line)
+    if not providers or len(providers) != len(set(providers)):
+        raise ValueError(f"Empty or duplicate use entries in business group: {name}")
+    return insertion, providers
+
+
+def ensure_business_provider_nodes(yaml_text: str) -> str:
+    for name in BUSINESS_SELECT_GROUPS:
+        block = group_block(yaml_text, name)
+        use = business_use_list(block, name)
+        if use is None:
+            position = block.index("\n") + 1
+            addition = "    use:\n      - provider1\n"
+        else:
+            position, providers = use
+            if "provider1" in providers:
+                continue
+            addition = "      - provider1\n"
+        updated = block[:position] + addition + block[position:]
+        yaml_text = yaml_text.replace(block, updated, 1)
+    return yaml_text
+
+
+def validate_rendered_yaml(yaml_text: str) -> None:
+    validate_upstream_yaml(yaml_text)
+    for name in BUSINESS_SELECT_GROUPS:
+        use = business_use_list(group_block(yaml_text, name), name)
+        if use is None or use[1].count("provider1") != 1:
+            raise ValueError(f"Business group must expose provider1 exactly once: {name}")
 
 
 def read_custom_rules() -> list[str]:
@@ -197,6 +253,8 @@ def render_yaml(upstream_yaml: str, personal_rules: list[str], source_url: str) 
         f"{rendered_rules}"
     )
     rendered = upstream_yaml.replace(marker, insertion, 1)
+    rendered = ensure_business_provider_nodes(rendered)
+    validate_rendered_yaml(rendered)
     return (
         "# GENERATED FILE — do not edit directly. Edit custom-rules.yaml instead.\n"
         f"# Source: {source_url}\n"
@@ -392,6 +450,7 @@ def render_apple_yaml(
     rendered = inject_apple_groups(rendered)
     rendered = inject_apple_rule_providers(rendered)
     rendered = inject_apple_rules(rendered)
+    validate_rendered_yaml(rendered)
     validate_rendered_apple_yaml(rendered, personal_rules)
     return rendered
 

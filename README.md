@@ -27,7 +27,7 @@ GitHub Actions 每日检查一次上游 `Aethersailor/Custom_OpenClash_Rules` �
 1. 从上游重新生成两个 YAML 与两个覆写模块；
 2. 在两个 YAML 的 `rules:` 最前面插入 `custom-rules.yaml` 中的个人规则；
 3. 仅在 Apple 方案中加入 Apple 规则提供者、策略组和规则顺序；
-4. 验证地区组仍为 `url-test`，业务选择组仍通过 `provider1` 提供具体节点；
+4. 验证地区组仍为 `url-test`、业务组仍为手动选择；生成时为业务组补齐 `provider1`（保留已有订阅来源），再验证两套配置都能选择具体节点；
 5. 验证两个 YAML 可解析后再提交。
 
 上游结构不再满足这些条件时，工作流会失败并保留上一版有效配置。可在仓库 **Actions** 页面手动运行 `Sync custom OpenClash YAML` 立即更新。
