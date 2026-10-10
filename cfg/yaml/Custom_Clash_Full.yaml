@@ -1,5 +1,5 @@
 # GENERATED FILE — do not edit directly. Edit custom-rules.yaml instead.
-# Source: https://raw.githubusercontent.com/Aethersailor/Custom_OpenClash_Rules/8cc7f294d1989e05dc930cc0ea52a06b869ede84/cfg/yaml/Custom_Clash_Full.yaml
+# Source: https://raw.githubusercontent.com/Aethersailor/Custom_OpenClash_Rules/2685d90a137e8d4f58c4bc30ed68a23891c686af/cfg/yaml/Custom_Clash_Full.yaml
 # Custom_OpenClash_Rules
 # OpenClash 专用最小 YAML 配置文件（重度分流版）
 # 项目地址：https://github.com/Aethersailor/Custom_OpenClash_Rules
@@ -243,6 +243,31 @@ proxy-groups:
     use:
       - provider1
   - name: "🤖 ChatGPT"
+    type: select
+    url: https://www.gstatic.com/generate_204
+    interval: 300
+    proxies:
+      - "🚀 手动选择"
+      - "♻️ 自动选择"
+      - "🇸🇬 新加坡节点"
+      - "🇭🇰 香港节点"
+      - "🇺🇸 美国节点"
+      - "🇯🇵 日本节点"
+      - "🇼🇸 台湾节点"
+      - "🇰🇷 韩国节点"
+      - "🇨🇦 加拿大节点"
+      - "🇬🇧 英国节点"
+      - "🇫🇷 法国节点"
+      - "🇩🇪 德国节点"
+      - "🇳🇱 荷兰节点"
+      - "🇹🇷 土耳其节点"
+      - "🇷🇺 俄罗斯节点"
+      - "🌐 其他地区"
+      - "🏠 家宽节点"
+      - "🐢 低倍率节点"
+    use:
+      - provider1
+  - name: "🤖 Gemini"
     type: select
     url: https://www.gstatic.com/generate_204
     interval: 300
@@ -760,6 +785,32 @@ proxy-groups:
       - "🐢 低倍率节点"
     use:
       - provider1
+  - name: "Ⓜ️ 微软服务CN"
+    type: select
+    url: https://www.gstatic.com/generate_204
+    interval: 300
+    proxies:
+      - "🎯 全球直连"
+      - "🚀 手动选择"
+      - "♻️ 自动选择"
+      - "🇭🇰 香港节点"
+      - "🇺🇸 美国节点"
+      - "🇯🇵 日本节点"
+      - "🇸🇬 新加坡节点"
+      - "🇼🇸 台湾节点"
+      - "🇰🇷 韩国节点"
+      - "🇨🇦 加拿大节点"
+      - "🇬🇧 英国节点"
+      - "🇫🇷 法国节点"
+      - "🇩🇪 德国节点"
+      - "🇳🇱 荷兰节点"
+      - "🇹🇷 土耳其节点"
+      - "🇷🇺 俄罗斯节点"
+      - "🌐 其他地区"
+      - "🏠 家宽节点"
+      - "🐢 低倍率节点"
+    use:
+      - provider1
   - name: "💾 OneDrive"
     type: select
     url: https://www.gstatic.com/generate_204
@@ -1165,6 +1216,12 @@ proxy-groups:
 # Domain/IP 规则优先使用 MRS；包含端口等复合规则时使用 Classical YAML。
 # 所有远程规则提供者统一按 28800 秒（8 小时）更新。
 rule-providers:
+  Microsoft_CN:
+    type: http
+    behavior: domain
+    format: mrs
+    interval: 28800
+    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/microsoft@cn.mrs"
   Nonstandard_Port_Direct:
     behavior: classical
     interval: 28800
@@ -1226,6 +1283,8 @@ rules:
   - "DOMAIN-KEYWORD,quickconnect,DIRECT"
   - "GEOSITE,giffgaff,🇬🇧 英国节点"
   - "DOMAIN,immortalwrt.org,🇭🇰 香港节点"
+  - "DOMAIN,login.steampowered.com,🎯 全球直连"
+  - "DOMAIN,help.steampowered.com,🎯 全球直连"
   - "GEOSITE,private,🎯 全球直连"
   - "GEOIP,private,🎯 全球直连,no-resolve"
   - "RULE-SET,Custom_Direct_Domain,🎯 全球直连"
@@ -1247,6 +1306,7 @@ rules:
   - "GEOSITE,openai,🤖 ChatGPT"
   - "GEOSITE,onedrive,💾 OneDrive"
   - "GEOSITE,bing,🤖 Copilot"
+  - "GEOSITE,google-deepmind,🤖 Gemini"
   - "GEOSITE,category-ai-!cn,🤖 国外AI服务"
   # 国内 AI 服务默认直连，可按需切换代理；须位于 cn 兜底规则之前。
   - "GEOSITE,category-ai-cn,🤖 国内AI服务"
@@ -1260,6 +1320,7 @@ rules:
   - "GEOSITE,youtube,📹 YouTube"
   - "GEOSITE,apple-tvplus,🎥 AppleTV+"
   - "GEOSITE,apple,🍎 苹果服务"
+  - "RULE-SET,Microsoft_CN,Ⓜ️ 微软服务CN"
   - "GEOSITE,microsoft,Ⓜ️ 微软服务"
   - "GEOSITE,googlefcm,📢 谷歌FCM"
   - "GEOSITE,google,🇬 谷歌服务"

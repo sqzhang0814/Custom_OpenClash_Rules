@@ -18,11 +18,23 @@ UPSTREAM_COMMIT_URL = (
 )
 OUTPUT_YAML = ROOT / "cfg/yaml/Custom_Clash_Full.yaml"
 OUTPUT_CONF = ROOT / "overwrite/yaml/Custom_Clash_Full.conf"
-APPLE_OUTPUT_YAML = ROOT / "cfg/yaml/Custom_Clash_Full_Apple.yaml"
-APPLE_OUTPUT_CONF = ROOT / "overwrite/yaml/Custom_Clash_Full_Apple.conf"
+PERSONAL_OUTPUT_YAML = ROOT / "cfg/yaml/Custom_Clash_Full_Personal.yaml"
+PERSONAL_OUTPUT_CONF = ROOT / "overwrite/yaml/Custom_Clash_Full_Personal.conf"
 METADATA = ROOT / "upstream-source.json"
 CUSTOM_RULES = ROOT / "custom-rules.yaml"
-APPLE_YAML_FILENAME = "Custom_Clash_Full_Apple.yaml"
+PERSONAL_YAML_FILENAME = "Custom_Clash_Full_Personal.yaml"
+
+MICROSOFT_CN_PROVIDER_NAME = "Microsoft_CN"
+MICROSOFT_CN_PROVIDER_URL = (
+    "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/microsoft@cn.mrs"
+)
+MICROSOFT_CN_GROUP = "Ⓜ️ 微软服务CN"
+MICROSOFT_CN_SOURCE_GROUP = "Ⓜ️ 微软服务"
+MICROSOFT_CN_RULE = f"RULE-SET,{MICROSOFT_CN_PROVIDER_NAME},{MICROSOFT_CN_GROUP}"
+
+GEMINI_GROUP = "🤖 Gemini"
+GEMINI_TEMPLATE_GROUP = "🤖 ChatGPT"
+GEMINI_RULE = f"GEOSITE,google-deepmind,{GEMINI_GROUP}"
 
 APPLE_PROVIDER_URLS = (
     (
@@ -225,6 +237,47 @@ def validate_rendered_yaml(yaml_text: str) -> None:
         use = business_use_list(group_block(yaml_text, name), name)
         if use is None or use[1].count("provider1") != 1:
             raise ValueError(f"Business group must expose provider1 exactly once: {name}")
+    microsoft_cn_block = group_block(yaml_text, MICROSOFT_CN_GROUP)
+    if "    type: select\n" not in microsoft_cn_block:
+        raise ValueError(f"{MICROSOFT_CN_GROUP} must be a select group")
+    microsoft_cn_use = business_use_list(microsoft_cn_block, MICROSOFT_CN_GROUP)
+    if microsoft_cn_use is None or microsoft_cn_use[1].count("provider1") != 1:
+        raise ValueError(f"{MICROSOFT_CN_GROUP} must expose provider1 exactly once")
+    microsoft_cn_lines = proxy_lines(microsoft_cn_block, MICROSOFT_CN_GROUP)
+    if not microsoft_cn_lines or microsoft_cn_lines[0] != '      - "🎯 全球直连"\n':
+        raise ValueError(f"{MICROSOFT_CN_GROUP} must start with 🎯 全球直连")
+    microsoft_rule = f'  - "{MICROSOFT_CN_RULE}"\n'
+    onedrive_rule = '  - "GEOSITE,onedrive,💾 OneDrive"\n'
+    bing_rule = '  - "GEOSITE,bing,🤖 Copilot"\n'
+    generic_microsoft_rule = f'  - "GEOSITE,microsoft,{MICROSOFT_CN_SOURCE_GROUP}"\n'
+    for line in (microsoft_rule, onedrive_rule, bing_rule, generic_microsoft_rule):
+        if yaml_text.count(line) != 1:
+            raise ValueError(f"Expected exactly one Microsoft rule anchor: {line.strip()}")
+    if not (
+        yaml_text.index(onedrive_rule)
+        < yaml_text.index(bing_rule)
+        < yaml_text.index(microsoft_rule)
+        < yaml_text.index(generic_microsoft_rule)
+    ):
+        raise ValueError("Microsoft CN rule must follow OneDrive and Bing, before Microsoft")
+
+    gemini_block = group_block(yaml_text, GEMINI_GROUP)
+    if "    type: select\n" not in gemini_block:
+        raise ValueError(f"{GEMINI_GROUP} must be a select group")
+    gemini_use = business_use_list(gemini_block, GEMINI_GROUP)
+    if gemini_use is None or gemini_use[1].count("provider1") != 1:
+        raise ValueError(f"{GEMINI_GROUP} must expose provider1 exactly once")
+    gemini_rule = f'  - "{GEMINI_RULE}"\n'
+    category_ai_rule = '  - "GEOSITE,category-ai-!cn,🤖 国外AI服务"\n'
+    google_rule = '  - "GEOSITE,google,🇬 谷歌服务"\n'
+    for line in (gemini_rule, category_ai_rule, google_rule):
+        if yaml_text.count(line) != 1:
+            raise ValueError(f"Expected exactly one Gemini rule anchor: {line.strip()}")
+    if not (
+        yaml_text.index(gemini_rule) < yaml_text.index(category_ai_rule)
+        and yaml_text.index(gemini_rule) < yaml_text.index(google_rule)
+    ):
+        raise ValueError("Gemini rule must precede the broad AI and Google rules")
 
 
 def read_custom_rules() -> list[str]:
@@ -254,6 +307,8 @@ def render_yaml(upstream_yaml: str, personal_rules: list[str], source_url: str) 
     )
     rendered = upstream_yaml.replace(marker, insertion, 1)
     rendered = ensure_business_provider_nodes(rendered)
+    rendered = inject_microsoft_cn(rendered)
+    rendered = inject_gemini(rendered)
     validate_rendered_yaml(rendered)
     return (
         "# GENERATED FILE — do not edit directly. Edit custom-rules.yaml instead.\n"
@@ -314,7 +369,7 @@ def inject_apple_groups(yaml_text: str) -> str:
         '  - name: "🍎 苹果服务CN"\n'
         "    type: select\n"
         "    proxies:\n"
-        '      - "DIRECT"\n'
+        '      - "🎯 全球直连"\n'
     )
     inserted = apple_cn_block + system_block + source_block
     if yaml_text.count(source_block) != 1:
@@ -349,6 +404,92 @@ def inject_apple_rule_providers(yaml_text: str) -> str:
     if yaml_text.count(anchor) != 1:
         raise ValueError("rule-providers insertion anchor is not unique")
     return yaml_text.replace(anchor, anchor + provider_text, 1)
+
+
+def inject_microsoft_cn(yaml_text: str) -> str:
+    if re.search(
+        rf'^  {re.escape(MICROSOFT_CN_PROVIDER_NAME)}:\s*$', yaml_text, flags=re.MULTILINE
+    ):
+        raise ValueError(f"Microsoft rule provider already exists: {MICROSOFT_CN_PROVIDER_NAME}")
+    if re.search(
+        rf'^  - name: "{re.escape(MICROSOFT_CN_GROUP)}"\s*$', yaml_text, flags=re.MULTILINE
+    ):
+        raise ValueError(f"Microsoft group already exists: {MICROSOFT_CN_GROUP}")
+    if f'  - "{MICROSOFT_CN_RULE}"\n' in yaml_text:
+        raise ValueError("Microsoft CN rule already exists")
+
+    source_block = group_block(yaml_text, MICROSOFT_CN_SOURCE_GROUP)
+    source_lines = proxy_lines(source_block, MICROSOFT_CN_SOURCE_GROUP)
+    direct_line = '      - "🎯 全球直连"\n'
+    source_without_direct = [line for line in source_lines if line != direct_line]
+    if not source_without_direct:
+        raise ValueError("Microsoft source group has no selectable candidates")
+
+    source_header = f'  - name: "{MICROSOFT_CN_SOURCE_GROUP}"\n'
+    cn_header = f'  - name: "{MICROSOFT_CN_GROUP}"\n'
+    if source_block.count(source_header) != 1:
+        raise ValueError("Microsoft source group anchor is not unique")
+    cn_block = source_block.replace(source_header, cn_header, 1)
+    proxy_match = re.search(
+        r"^    proxies:\n(?P<items>(?:      - [^\n]*\n)+)",
+        cn_block,
+        flags=re.MULTILINE,
+    )
+    if not proxy_match:
+        raise ValueError(f"Could not rebuild {MICROSOFT_CN_GROUP} proxies")
+    cn_block = (
+        cn_block[: proxy_match.start("items")]
+        + direct_line
+        + "".join(source_without_direct)
+        + cn_block[proxy_match.end("items") :]
+    )
+    if yaml_text.count(source_block) != 1:
+        raise ValueError("Microsoft source group insertion anchor is not unique")
+    yaml_text = yaml_text.replace(source_block, source_block + cn_block, 1)
+
+    provider_text = (
+        f"  {MICROSOFT_CN_PROVIDER_NAME}:\n"
+        "    type: http\n"
+        "    behavior: domain\n"
+        "    format: mrs\n"
+        "    interval: 28800\n"
+        f'    url: "{MICROSOFT_CN_PROVIDER_URL}"\n'
+    )
+    rule_provider_anchor = "rule-providers:\n"
+    if yaml_text.count(rule_provider_anchor) != 1:
+        raise ValueError("Microsoft provider insertion anchor is not unique")
+    yaml_text = yaml_text.replace(rule_provider_anchor, rule_provider_anchor + provider_text, 1)
+
+    generic_rule = f'  - "GEOSITE,microsoft,{MICROSOFT_CN_SOURCE_GROUP}"\n'
+    microsoft_cn_rule = f'  - "{MICROSOFT_CN_RULE}"\n'
+    if yaml_text.count(generic_rule) != 1:
+        raise ValueError("Expected exactly one generic Microsoft rule")
+    return yaml_text.replace(generic_rule, microsoft_cn_rule + generic_rule, 1)
+
+
+def inject_gemini(yaml_text: str) -> str:
+    if re.search(
+        rf'^  - name: "{re.escape(GEMINI_GROUP)}"\s*$', yaml_text, flags=re.MULTILINE
+    ):
+        raise ValueError(f"Gemini group already exists: {GEMINI_GROUP}")
+    gemini_rule = f'  - "{GEMINI_RULE}"\n'
+    if gemini_rule in yaml_text:
+        raise ValueError("Gemini rule already exists")
+
+    template_block = group_block(yaml_text, GEMINI_TEMPLATE_GROUP)
+    template_header = f'  - name: "{GEMINI_TEMPLATE_GROUP}"\n'
+    gemini_header = f'  - name: "{GEMINI_GROUP}"\n'
+    if template_block.count(template_header) != 1:
+        raise ValueError("Gemini template group anchor is not unique")
+    gemini_block = template_block.replace(template_header, gemini_header, 1)
+    if yaml_text.count(template_block) != 1:
+        raise ValueError("Gemini group insertion anchor is not unique")
+    yaml_text = yaml_text.replace(template_block, template_block + gemini_block, 1)
+
+    category_ai_rule = '  - "GEOSITE,category-ai-!cn,🤖 国外AI服务"\n'
+    if yaml_text.count(category_ai_rule) != 1:
+        raise ValueError("Expected exactly one category-ai rule anchor for Gemini insertion")
+    return yaml_text.replace(category_ai_rule, gemini_rule + category_ai_rule, 1)
 
 
 def inject_apple_rules(yaml_text: str) -> str:
@@ -411,8 +552,8 @@ def validate_rendered_apple_yaml(yaml_text: str, personal_rules: list[str]) -> N
     cn_block = group_block(yaml_text, "🍎 苹果服务CN")
     if "    type: select\n" not in cn_block or "    use:\n" in cn_block:
         raise ValueError("🍎 苹果服务CN must be a standalone select group")
-    if proxy_lines(cn_block, "🍎 苹果服务CN") != ['      - "DIRECT"\n']:
-        raise ValueError("🍎 苹果服务CN must contain only DIRECT")
+    if proxy_lines(cn_block, "🍎 苹果服务CN") != ['      - "🎯 全球直连"\n']:
+        raise ValueError("🍎 苹果服务CN must contain only 🎯 全球直连")
 
     system_block = group_block(yaml_text, "🍎 苹果系统服务")
     if "    type: select\n" not in system_block:
@@ -486,20 +627,20 @@ def render_conf(
     )
 
 
-def validate_rendered_apple_conf(conf_text: str) -> None:
+def validate_rendered_personal_conf(conf_text: str) -> None:
     expected_url = (
         "https://cdn.jsdelivr.net/gh/sqzhang0814/Custom_OpenClash_Rules@"
-        f"refs/heads/main/cfg/yaml/{APPLE_YAML_FILENAME}"
+        f"refs/heads/main/cfg/yaml/{PERSONAL_YAML_FILENAME}"
     )
-    expected_path = f"/etc/openclash/config/{APPLE_YAML_FILENAME}"
+    expected_path = f"/etc/openclash/config/{PERSONAL_YAML_FILENAME}"
     if conf_text.count(expected_url) != 1:
-        raise ValueError("Apple overwrite module has an unexpected DOWNLOAD_FILE URL")
+        raise ValueError("Personal overwrite module has an unexpected DOWNLOAD_FILE URL")
     if conf_text.count(expected_path) < 2:
-        raise ValueError("Apple overwrite module must use the Apple YAML path")
+        raise ValueError("Personal overwrite module must use the Personal YAML path")
     if "Custom_Clash_Full.yaml" in conf_text:
-        raise ValueError("Apple overwrite module still references the original YAML filename")
+        raise ValueError("Personal overwrite module still references the original YAML filename")
     if f"CONFIG_FILE = {expected_path}" not in conf_text:
-        raise ValueError("Apple overwrite module has an unexpected CONFIG_FILE")
+        raise ValueError("Personal overwrite module has an unexpected CONFIG_FILE")
 
 
 def write_text(path: Path, text: str) -> None:
@@ -523,12 +664,12 @@ def main() -> None:
     write_text(OUTPUT_YAML, render_yaml(upstream_yaml, personal_rules, yaml_url))
     write_text(OUTPUT_CONF, render_conf(upstream_conf, conf_url))
     write_text(
-        APPLE_OUTPUT_YAML,
+        PERSONAL_OUTPUT_YAML,
         render_apple_yaml(upstream_yaml, personal_rules, yaml_url),
     )
-    apple_conf = render_conf(upstream_conf, conf_url, APPLE_YAML_FILENAME)
-    validate_rendered_apple_conf(apple_conf)
-    write_text(APPLE_OUTPUT_CONF, apple_conf)
+    personal_conf = render_conf(upstream_conf, conf_url, PERSONAL_YAML_FILENAME)
+    validate_rendered_personal_conf(personal_conf)
+    write_text(PERSONAL_OUTPUT_CONF, personal_conf)
     metadata = {
         "upstream_repository": UPSTREAM_REPOSITORY,
         "upstream_commit": commit,
