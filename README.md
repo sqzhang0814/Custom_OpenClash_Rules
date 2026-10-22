@@ -20,7 +20,7 @@ https://cdn.jsdelivr.net/gh/sqzhang0814/Custom_OpenClash_Rules@refs/heads/main/o
 
 个人定制方案额外包含 `Apple_Update`、`Apple_PKI`、`Apple_iCloud_CN` 和 `Apple_Dev_CN` 四个 MetaCubeX 规则提供者。系统更新与 PKI 默认进入 `🍎 苹果系统服务`（默认 `🎯 全球直连`，可切换地区组或具体节点），中国区 iCloud 与开发者服务默认进入仅含 `🎯 全球直连` 的 `🍎 苹果服务CN`。原有通用 `GEOSITE,apple` 规则继续指向 `🍎 苹果服务`。
 
-两套方案共同加入 `Ⓜ️ 微软服务CN` 与 `🤖 Gemini` 独立分流：前者使用 `Microsoft_CN` 规则提供者，默认 `🎯 全球直连`，选项同 `Ⓜ️ 微软服务`，规则位于 OneDrive/Bing 之后、通用 Microsoft 之前；后者使用 `GEOSITE,google-deepmind`，选项同 `🤖 ChatGPT`，规则位于通用国外 AI 与 Google 服务之前，避免 Gemini 域名被 `category-ai-!cn` 或 `GEOSITE,google` 先行命中。
+两套方案共同加入 `Ⓜ️ 微软服务CN` 独立分流：使用 `Microsoft_CN` 规则提供者，默认 `🎯 全球直连`，选项同 `Ⓜ️ 微软服务`，规则位于 OneDrive/Bing 之后、通用 Microsoft 之前。Gemini 分流由上游原生提供（`GEOSITE,google-gemini` 指向 `🤖 Gemini`），生成器将其纳入业务组校验，保证可手动选择、保留 `provider1`，且规则必须位于通用国外 AI 与 Google 服务之前，避免 Gemini 域名被 `category-ai-!cn` 或 `GEOSITE,google` 先行命中。
 
 ## 自动更新
 
@@ -28,7 +28,7 @@ GitHub Actions 每日检查一次上游 `Aethersailor/Custom_OpenClash_Rules` �
 
 1. 从上游重新生成两个 YAML 与两个覆写模块；
 2. 在两个 YAML 的 `rules:` 最前面插入 `custom-rules.yaml` 中的个人规则；
-3. 在两套方案中加入微软中国规则与 Gemini 独立分流，仅在个人定制方案中加入 Apple 规则提供者、策略组和规则顺序；
+3. 在两套方案中加入微软中国规则，校验上游提供的 Gemini 独立分流，仅在个人定制方案中加入 Apple 规则提供者、策略组和规则顺序；
 4. 验证地区组仍为 `url-test`、业务组仍为手动选择；生成时为业务组补齐 `provider1`（保留已有订阅来源），再验证两套配置都能选择具体节点；
 5. 验证两个 YAML 可解析后再提交。
 

@@ -27,13 +27,6 @@ class BusinessProviderTests(unittest.TestCase):
         self.microsoft_cn_group.start()
         self.addCleanup(self.microsoft_group.stop)
         self.addCleanup(self.microsoft_cn_group.stop)
-        self.gemini_template = patch.object(
-            config,
-            "GEMINI_TEMPLATE_GROUP",
-            "Example",
-        )
-        self.gemini_template.start()
-        self.addCleanup(self.gemini_template.stop)
         self.business = patch.object(config, "BUSINESS_SELECT_GROUPS", ("Example",))
         self.regions = patch.object(config, "REGION_GROUPS", ())
         self.business.start()
@@ -46,6 +39,7 @@ class BusinessProviderTests(unittest.TestCase):
             'rules:\n'
             '  - "GEOSITE,onedrive,💾 OneDrive"\n'
             '  - "GEOSITE,bing,🤖 Copilot"\n'
+            '  - "GEOSITE,google-gemini,🤖 Gemini"\n'
             '  - "GEOSITE,category-ai-!cn,🤖 国外AI服务"\n'
             '  - "GEOSITE,microsoft,Example"\n'
             '  - "GEOSITE,google,🇬 谷歌服务"\n'
@@ -131,20 +125,13 @@ class MicrosoftGeminiAndPersonalTests(unittest.TestCase):
         business = patch.object(
             config,
             "BUSINESS_SELECT_GROUPS",
-            ("Ⓜ️ 微软服务", "💾 OneDrive"),
+            ("Ⓜ️ 微软服务", "💾 OneDrive", "🤖 Gemini"),
         )
         regions = patch.object(config, "REGION_GROUPS", ())
         business.start()
         regions.start()
         self.addCleanup(business.stop)
         self.addCleanup(regions.stop)
-        gemini_template = patch.object(
-            config,
-            "GEMINI_TEMPLATE_GROUP",
-            "Ⓜ️ 微软服务",
-        )
-        gemini_template.start()
-        self.addCleanup(gemini_template.stop)
 
     def source(self):
         candidates = (
@@ -165,12 +152,14 @@ class MicrosoftGeminiAndPersonalTests(unittest.TestCase):
             "proxy-groups:\n"
             + group_lines("Ⓜ️ 微软服务")
             + group_lines("💾 OneDrive")
+            + group_lines("🤖 Gemini")
             + "\nrule-providers:\n"
             "  Existing:\n"
             "    type: http\n"
             "rules:\n"
             '  - "GEOSITE,onedrive,💾 OneDrive"\n'
             '  - "GEOSITE,bing,🤖 Copilot"\n'
+            '  - "GEOSITE,google-gemini,🤖 Gemini"\n'
             '  - "GEOSITE,category-ai-!cn,🤖 国外AI服务"\n'
             '  - "GEOSITE,microsoft,Ⓜ️ 微软服务"\n'
             '  - "GEOSITE,google,🇬 谷歌服务"\n'
@@ -198,20 +187,35 @@ class MicrosoftGeminiAndPersonalTests(unittest.TestCase):
         self.assertIn(config.MICROSOFT_CN_PROVIDER_URL, rendered)
         config.validate_rendered_yaml(rendered)
 
-    def test_gemini_group_and_rule_precede_ai_and_google(self):
-        rendered = config.render_yaml(self.source(), [], "fixture")
-        gemini_block = config.group_block(rendered, "🤖 Gemini")
-        self.assertIn("    type: select\n", gemini_block)
-        self.assertIn("    use:\n      - provider1\n", gemini_block)
-        self.assertLess(
-            rendered.index('  - "GEOSITE,google-deepmind,🤖 Gemini"\n'),
-            rendered.index('  - "GEOSITE,category-ai-!cn,🤖 国外AI服务"\n'),
+    def test_upstream_gemini_group_and_rule_precede_ai_and_google(self):
+        for category in ("google-gemini", "google-deepmind"):
+            with self.subTest(category=category):
+                source = self.source().replace(
+                    '  - "GEOSITE,google-gemini,🤖 Gemini"\n',
+                    f'  - "GEOSITE,{category},🤖 Gemini"\n',
+                )
+                rendered = config.render_yaml(source, [], "fixture")
+                gemini_block = config.group_block(rendered, "🤖 Gemini")
+                self.assertIn("    type: select\n", gemini_block)
+                self.assertIn("    use:\n      - provider1\n", gemini_block)
+                self.assertLess(
+                    rendered.index(f'  - "GEOSITE,{category},🤖 Gemini"\n'),
+                    rendered.index('  - "GEOSITE,category-ai-!cn,🤖 国外AI服务"\n'),
+                )
+                self.assertLess(
+                    rendered.index(f'  - "GEOSITE,{category},🤖 Gemini"\n'),
+                    rendered.index('  - "GEOSITE,google,🇬 谷歌服务"\n'),
+                )
+                config.validate_rendered_yaml(rendered)
+
+    def test_duplicate_gemini_rules_are_rejected(self):
+        source = self.source().replace(
+            '  - "GEOSITE,google-gemini,🤖 Gemini"\n',
+            '  - "GEOSITE,google-gemini,🤖 Gemini"\n'
+            '  - "GEOSITE,google-deepmind,🤖 Gemini"\n',
         )
-        self.assertLess(
-            rendered.index('  - "GEOSITE,google-deepmind,🤖 Gemini"\n'),
-            rendered.index('  - "GEOSITE,google,🇬 谷歌服务"\n'),
-        )
-        config.validate_rendered_yaml(rendered)
+        with self.assertRaises(ValueError):
+            config.render_yaml(source, [], "fixture")
 
     def test_personal_conf_uses_personal_filename(self):
         upstream_conf = (

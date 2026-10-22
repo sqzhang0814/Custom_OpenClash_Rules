@@ -33,8 +33,13 @@ MICROSOFT_CN_SOURCE_GROUP = "Ⓜ️ 微软服务"
 MICROSOFT_CN_RULE = f"RULE-SET,{MICROSOFT_CN_PROVIDER_NAME},{MICROSOFT_CN_GROUP}"
 
 GEMINI_GROUP = "🤖 Gemini"
-GEMINI_TEMPLATE_GROUP = "🤖 ChatGPT"
-GEMINI_RULE = f"GEOSITE,google-deepmind,{GEMINI_GROUP}"
+# Upstream now provides the dedicated Gemini group and rule. Accept either
+# geosite category form: google-gemini is the documented alias of
+# google-deepmind, and upstream may migrate between them over time.
+GEMINI_RULES = (
+    f"GEOSITE,google-gemini,{GEMINI_GROUP}",
+    f"GEOSITE,google-deepmind,{GEMINI_GROUP}",
+)
 
 APPLE_PROVIDER_URLS = (
     (
@@ -91,6 +96,7 @@ BUSINESS_SELECT_GROUPS = (
     "🚀 GitHub",
     "🤖 ChatGPT",
     "🤖 Copilot",
+    "🤖 Gemini",
     "🤖 国外AI服务",
     "🤖 国内AI服务",
     "🎶 TikTok",
@@ -261,16 +267,16 @@ def validate_rendered_yaml(yaml_text: str) -> None:
     ):
         raise ValueError("Microsoft CN rule must follow OneDrive and Bing, before Microsoft")
 
-    gemini_block = group_block(yaml_text, GEMINI_GROUP)
-    if "    type: select\n" not in gemini_block:
-        raise ValueError(f"{GEMINI_GROUP} must be a select group")
-    gemini_use = business_use_list(gemini_block, GEMINI_GROUP)
-    if gemini_use is None or gemini_use[1].count("provider1") != 1:
-        raise ValueError(f"{GEMINI_GROUP} must expose provider1 exactly once")
-    gemini_rule = f'  - "{GEMINI_RULE}"\n'
+    gemini_rule_lines = [f'  - "{rule}"\n' for rule in GEMINI_RULES]
+    gemini_counts = [yaml_text.count(line) for line in gemini_rule_lines]
+    if sum(gemini_counts) != 1:
+        raise ValueError(
+            "Expected exactly one dedicated Gemini rule (google-gemini or google-deepmind)"
+        )
+    gemini_rule = gemini_rule_lines[gemini_counts.index(1)]
     category_ai_rule = '  - "GEOSITE,category-ai-!cn,🤖 国外AI服务"\n'
     google_rule = '  - "GEOSITE,google,🇬 谷歌服务"\n'
-    for line in (gemini_rule, category_ai_rule, google_rule):
+    for line in (category_ai_rule, google_rule):
         if yaml_text.count(line) != 1:
             raise ValueError(f"Expected exactly one Gemini rule anchor: {line.strip()}")
     if not (
@@ -308,7 +314,6 @@ def render_yaml(upstream_yaml: str, personal_rules: list[str], source_url: str) 
     rendered = upstream_yaml.replace(marker, insertion, 1)
     rendered = ensure_business_provider_nodes(rendered)
     rendered = inject_microsoft_cn(rendered)
-    rendered = inject_gemini(rendered)
     validate_rendered_yaml(rendered)
     return (
         "# GENERATED FILE — do not edit directly. Edit custom-rules.yaml instead.\n"
@@ -465,31 +470,6 @@ def inject_microsoft_cn(yaml_text: str) -> str:
     if yaml_text.count(generic_rule) != 1:
         raise ValueError("Expected exactly one generic Microsoft rule")
     return yaml_text.replace(generic_rule, microsoft_cn_rule + generic_rule, 1)
-
-
-def inject_gemini(yaml_text: str) -> str:
-    if re.search(
-        rf'^  - name: "{re.escape(GEMINI_GROUP)}"\s*$', yaml_text, flags=re.MULTILINE
-    ):
-        raise ValueError(f"Gemini group already exists: {GEMINI_GROUP}")
-    gemini_rule = f'  - "{GEMINI_RULE}"\n'
-    if gemini_rule in yaml_text:
-        raise ValueError("Gemini rule already exists")
-
-    template_block = group_block(yaml_text, GEMINI_TEMPLATE_GROUP)
-    template_header = f'  - name: "{GEMINI_TEMPLATE_GROUP}"\n'
-    gemini_header = f'  - name: "{GEMINI_GROUP}"\n'
-    if template_block.count(template_header) != 1:
-        raise ValueError("Gemini template group anchor is not unique")
-    gemini_block = template_block.replace(template_header, gemini_header, 1)
-    if yaml_text.count(template_block) != 1:
-        raise ValueError("Gemini group insertion anchor is not unique")
-    yaml_text = yaml_text.replace(template_block, template_block + gemini_block, 1)
-
-    category_ai_rule = '  - "GEOSITE,category-ai-!cn,🤖 国外AI服务"\n'
-    if yaml_text.count(category_ai_rule) != 1:
-        raise ValueError("Expected exactly one category-ai rule anchor for Gemini insertion")
-    return yaml_text.replace(category_ai_rule, gemini_rule + category_ai_rule, 1)
 
 
 def inject_apple_rules(yaml_text: str) -> str:
