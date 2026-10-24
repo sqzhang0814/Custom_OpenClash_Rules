@@ -229,6 +229,45 @@ class MicrosoftGeminiAndPersonalTests(unittest.TestCase):
         rendered = config.render_conf(upstream_conf, "fixture", config.PERSONAL_YAML_FILENAME)
         config.validate_rendered_personal_conf(rendered)
         self.assertNotIn("Custom_Clash_Full_Apple", rendered)
+        self.assertIn(", force=false, cron=0 6 * * *, restart=true\n", rendered)
+
+    def test_personal_update_policy_overrides_upstream_without_changing_original(self):
+        source = (
+            "[General]\n"
+            "DOWNLOAD_FILE = url=https://example.invalid/a, path=/etc/openclash/config/Custom_Clash_Full.yaml, force=true, cron=0 3 * * 1, ua=ExistingAgent, restart=false\n"
+            "CONFIG_FILE = /etc/openclash/config/Custom_Clash_Full.yaml\n"
+            "SUB_INFO_URL = $EN_KEY1\n"
+            "RESTART = true\n"
+            "[Overwrite]\n"
+            'ruby_map_edit "$CONFIG_FILE" x y z "$EN_KEY1"\n'
+        )
+        personal = config.render_conf(source, "fixture", config.PERSONAL_YAML_FILENAME)
+        config.validate_rendered_personal_conf(personal)
+        download = next(line for line in personal.splitlines() if line.startswith("DOWNLOAD_FILE"))
+        for key in ("force=", "cron=", "restart="):
+            self.assertEqual(download.count(key), 1)
+        self.assertIn("ua=ExistingAgent", download)
+        self.assertTrue(download.endswith(", force=false, cron=0 6 * * *, restart=true"))
+        ordinary = config.render_conf(source, "fixture")
+        self.assertIn("force=true, cron=0 3 * * 1, ua=ExistingAgent, restart=false", ordinary)
+
+    def test_personal_validator_rejects_lost_cache_or_daily_update_settings(self):
+        source = (
+            "[General]\n"
+            "DOWNLOAD_FILE = url=https://example.invalid/a, path=/etc/openclash/config/Custom_Clash_Full.yaml\n"
+            "CONFIG_FILE = /etc/openclash/config/Custom_Clash_Full.yaml\n"
+            "SUB_INFO_URL = $EN_KEY1\n"
+            "[Overwrite]\n"
+            'ruby_map_edit "$CONFIG_FILE" x y z "$EN_KEY1"\n'
+        )
+        good = config.render_conf(source, "fixture", config.PERSONAL_YAML_FILENAME)
+        for old, new in (
+            ("force=false", "force=true"),
+            (", cron=0 6 * * *", ""),
+            ("restart=true", "restart=false"),
+        ):
+            with self.subTest(setting=old), self.assertRaises(ValueError):
+                config.validate_rendered_personal_conf(good.replace(old, new))
 
 
 if __name__ == "__main__":

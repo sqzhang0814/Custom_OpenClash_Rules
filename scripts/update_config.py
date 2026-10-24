@@ -23,6 +23,7 @@ PERSONAL_OUTPUT_CONF = ROOT / "overwrite/yaml/Custom_Clash_Full_Personal.conf"
 METADATA = ROOT / "upstream-source.json"
 CUSTOM_RULES = ROOT / "custom-rules.yaml"
 PERSONAL_YAML_FILENAME = "Custom_Clash_Full_Personal.yaml"
+PERSONAL_DOWNLOAD_OPTIONS = ", force=false, cron=0 6 * * *, restart=true"
 
 MICROSOFT_CN_PROVIDER_NAME = "Microsoft_CN"
 MICROSOFT_CN_PROVIDER_URL = (
@@ -600,6 +601,19 @@ def render_conf(
         raise ValueError("Could not replace the YAML download URL in upstream overwrite module")
     if yaml_filename != "Custom_Clash_Full.yaml":
         rendered = rendered.replace("Custom_Clash_Full.yaml", yaml_filename)
+    if yaml_filename == PERSONAL_YAML_FILENAME:
+        # Use the cached template at startup. OpenClash's native cron downloader
+        # refreshes it daily and restarts after a successful download.
+        rendered, count = re.subn(
+            r"(?m)^(DOWNLOAD_FILE\s*=.*)$",
+            lambda match: re.sub(
+                r",\s*(?:force|cron|restart)\s*=[^,\n]*", "", match[0]
+            ) + PERSONAL_DOWNLOAD_OPTIONS,
+            rendered,
+            count=1,
+        )
+        if count != 1:
+            raise ValueError("Personal module must have exactly one download job")
     return (
         "# GENERATED FILE — source module is synchronized by GitHub Actions.\n"
         f"# Source: {source_url}\n"
@@ -621,6 +635,9 @@ def validate_rendered_personal_conf(conf_text: str) -> None:
         raise ValueError("Personal overwrite module still references the original YAML filename")
     if f"CONFIG_FILE = {expected_path}" not in conf_text:
         raise ValueError("Personal overwrite module has an unexpected CONFIG_FILE")
+    downloads = re.findall(r"(?m)^DOWNLOAD_FILE\s*=.*$", conf_text)
+    if len(downloads) != 1 or not downloads[0].endswith(PERSONAL_DOWNLOAD_OPTIONS):
+        raise ValueError("Personal module must use cached startup and native daily updates")
 
 
 def write_text(path: Path, text: str) -> None:
