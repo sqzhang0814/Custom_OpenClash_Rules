@@ -15,7 +15,16 @@ class BusinessProviderTests(unittest.TestCase):
         '      - "🎯 全球直连"\n'
         '      - "Region"\n'
     )
-    prefix = 'proxy-providers:\n  provider1:\n    type: http\nproxy-groups:\n'
+    prefix = (
+        "proxy-providers:\n"
+        "  provider1:\n"
+        "    type: http\n"
+        "    health-check:\n"
+        "      enable: true\n"
+        "      url: https://www.gstatic.com/generate_204\n"
+        "      interval: 300\n"
+        "proxy-groups:\n"
+    )
     suffix = 'rules:\n  - "MATCH,Example"\n'
 
     def setUp(self):
@@ -72,6 +81,8 @@ class BusinessProviderTests(unittest.TestCase):
             ],
         )
         self.assertIn('  - name: "Novix"\n', rendered)
+        self.assertEqual(config.provider_health_check_interval(rendered), 180)
+        self.assertIn("    interval: 180\n", config.group_block(rendered, "Novix"))
         self.assertIn('rules:\n  # Personal rules', rendered)
         self.assertLess(rendered.index("DOMAIN,example.org,DIRECT"), rendered.index("MATCH,Example"))
         config.validate_rendered_yaml(rendered)
@@ -184,6 +195,10 @@ class MicrosoftGeminiAndPersonalTests(unittest.TestCase):
             "proxy-providers:\n"
             "  provider1:\n"
             "    type: http\n"
+            "    health-check:\n"
+            "      enable: true\n"
+            "      url: https://www.gstatic.com/generate_204\n"
+            "      interval: 300\n"
             "proxy-groups:\n"
             + group_lines("Ⓜ️ 微软服务")
             + group_lines("💾 OneDrive")
@@ -216,7 +231,16 @@ class MicrosoftGeminiAndPersonalTests(unittest.TestCase):
         )
         self.assertIn('  - name: "Novix"\n', rendered)
         self.assertIn("    type: fallback\n", config.group_block(rendered, "Novix"))
-        self.assertIn("    filter: '(?i)Novix'\n", config.group_block(rendered, "Novix"))
+        self.assertIn(
+            f"    filter: '{config.NOVIX_FILTER}'\n",
+            config.group_block(rendered, "Novix"),
+        )
+        novix_block = config.group_block(rendered, "Novix")
+        self.assertLess(
+            novix_block.index("HY2|Hysteria2"),
+            novix_block.index("REALITY"),
+        )
+        self.assertIn("    interval: 180\n", config.group_block(rendered, "Novix"))
         self.assertLess(rendered.index("GEOSITE,onedrive"), rendered.index("GEOSITE,bing"))
         self.assertLess(rendered.index("GEOSITE,bing"), rendered.index("RULE-SET,Microsoft_CN"))
         self.assertLess(
@@ -338,6 +362,10 @@ class NovixAndAppleCnTests(unittest.TestCase):
             "proxy-providers:\n"
             "  provider1:\n"
             "    type: http\n"
+            "    health-check:\n"
+            "      enable: true\n"
+            "      url: https://www.gstatic.com/generate_204\n"
+            "      interval: 300\n"
             "proxy-groups:\n"
             + group_lines("🍎 苹果服务")
             + group_lines("Ⓜ️ 微软服务")

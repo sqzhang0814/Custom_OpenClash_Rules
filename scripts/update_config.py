@@ -34,7 +34,9 @@ MICROSOFT_CN_SOURCE_GROUP = "Ⓜ️ 微软服务"
 MICROSOFT_CN_RULE = f"RULE-SET,{MICROSOFT_CN_PROVIDER_NAME},{MICROSOFT_CN_GROUP}"
 
 NOVIX_GROUP = "Novix"
-NOVIX_FILTER = "(?i)Novix"
+NOVIX_FILTER = "(?i)Novix.*(HY2|Hysteria2)`(?i)Novix.*REALITY"
+NOVIX_HEALTH_CHECK_INTERVAL = 180
+PROVIDER_HEALTH_CHECK_INTERVAL = 180
 NOVIX_EXCLUDED_SELECT_GROUPS = (
     "🎯 全球直连",
     "🔀 非标端口",
@@ -255,6 +257,14 @@ def validate_rendered_yaml(yaml_text: str) -> None:
         raise ValueError(f"{NOVIX_GROUP} must expose provider1")
     if f"    filter: '{NOVIX_FILTER}'\n" not in novix_block:
         raise ValueError(f"{NOVIX_GROUP} must filter by {NOVIX_FILTER}")
+    if f"    interval: {NOVIX_HEALTH_CHECK_INTERVAL}\n" not in novix_block:
+        raise ValueError(
+            f"{NOVIX_GROUP} must use {NOVIX_HEALTH_CHECK_INTERVAL}s health checks"
+        )
+    if provider_health_check_interval(yaml_text) != PROVIDER_HEALTH_CHECK_INTERVAL:
+        raise ValueError(
+            f"provider1 must use {PROVIDER_HEALTH_CHECK_INTERVAL}s health checks"
+        )
     for name in BUSINESS_SELECT_GROUPS:
         use = business_use_list(group_block(yaml_text, name), name)
         if use is None or use[1].count("provider1") != 1:
@@ -332,6 +342,10 @@ def render_yaml(upstream_yaml: str, personal_rules: list[str], source_url: str) 
     )
     rendered = upstream_yaml.replace(marker, insertion, 1)
     rendered = ensure_business_provider_nodes(rendered)
+    rendered = set_provider_health_check_interval(
+        rendered,
+        PROVIDER_HEALTH_CHECK_INTERVAL,
+    )
     rendered = inject_novix_group(rendered)
     rendered = inject_novix_candidates(rendered)
     rendered = inject_microsoft_cn(rendered)
@@ -361,7 +375,7 @@ NOVIX_GROUP_BLOCK = (
     "      - provider1\n"
     f"    filter: '{NOVIX_FILTER}'\n"
     "    url: https://www.gstatic.com/generate_204\n"
-    "    interval: 300\n"
+    f"    interval: {NOVIX_HEALTH_CHECK_INTERVAL}\n"
 )
 
 
@@ -607,6 +621,49 @@ def provider_block(yaml_text: str, provider_name: str) -> str:
     )
     end = matches[0].end() + following.start() if following else len(yaml_text)
     return yaml_text[matches[0].start() : end]
+
+
+def provider_health_check_match(yaml_text: str) -> tuple[str, re.Match[str]]:
+    block = provider_block(yaml_text, "provider1")
+    match = re.search(
+        r"(?ms)^    health-check:\n(?P<body>(?:      .*\n)+)",
+        block,
+    )
+    if not match:
+        raise ValueError("provider1 must contain a health-check block")
+    return block, match
+
+
+def provider_health_check_interval(yaml_text: str) -> int:
+    _, match = provider_health_check_match(yaml_text)
+    interval_match = re.search(
+        r"(?m)^      interval:\s*(\d+)\s*$",
+        match.group("body"),
+    )
+    if not interval_match:
+        raise ValueError("provider1 health-check must contain an interval")
+    return int(interval_match.group(1))
+
+
+def set_provider_health_check_interval(yaml_text: str, interval: int) -> str:
+    block, match = provider_health_check_match(yaml_text)
+    body = match.group("body")
+    updated_body, count = re.subn(
+        r"(?m)^      interval:\s*\d+\s*$",
+        f"      interval: {interval}",
+        body,
+        count=1,
+    )
+    if count != 1:
+        raise ValueError("provider1 health-check interval is missing or duplicated")
+    updated_block = (
+        block[: match.start("body")]
+        + updated_body
+        + block[match.end("body") :]
+    )
+    if yaml_text.count(block) != 1:
+        raise ValueError("provider1 insertion anchor is not unique")
+    return yaml_text.replace(block, updated_block, 1)
 
 
 def validate_rendered_apple_yaml(yaml_text: str, personal_rules: list[str]) -> None:

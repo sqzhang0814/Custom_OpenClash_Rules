@@ -27,13 +27,61 @@ jobs:
           ruby -e 'require "yaml"; YAML.safe_load(File.read("cfg/yaml/Custom_Clash_Full.yaml"), aliases: true); puts "YAML valid"'
           ruby -e 'require "yaml"; YAML.safe_load(File.read("cfg/yaml/Custom_Clash_Full_Personal.yaml"), aliases: true); puts "Personal YAML valid"'
       - name: Commit changes when upstream changed
+        id: commit
+        shell: bash
         run: |
-          if [ -z "$(git status --porcelain)" ]; then
+          set -euo pipefail
+          generated_paths=(
+            "cfg/yaml/Custom_Clash_Full.yaml"
+            "overwrite/yaml/Custom_Clash_Full.conf"
+            "cfg/yaml/Custom_Clash_Full_Personal.yaml"
+            "overwrite/yaml/Custom_Clash_Full_Personal.conf"
+            "upstream-source.json"
+          )
+          if [ -z "$(git status --porcelain -- "${generated_paths[@]}")" ]; then
             echo "No upstream change to commit."
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add cfg/yaml/Custom_Clash_Full.yaml overwrite/yaml/Custom_Clash_Full.conf cfg/yaml/Custom_Clash_Full_Personal.yaml overwrite/yaml/Custom_Clash_Full_Personal.conf upstream-source.json
+          git add -- "${generated_paths[@]}"
           git commit -m "chore(sync): update custom OpenClash files"
           git push
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Purge jsDelivr caches
+        if: steps.commit.outputs.pushed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          paths=(
+            "overwrite/yaml/Custom_Clash_Full.conf"
+            "overwrite/yaml/Custom_Clash_Full_Personal.conf"
+            "cfg/yaml/Custom_Clash_Full.yaml"
+            "cfg/yaml/Custom_Clash_Full_Personal.yaml"
+          )
+
+          for path in "${paths[@]}"; do
+            url="https://purge.jsdelivr.net/gh/sqzhang0814/Custom_OpenClash_Rules@refs/heads/main/${path}"
+            echo "::group::Purge ${path}"
+            if curl \
+              --fail \
+              --silent \
+              --show-error \
+              --location \
+              --connect-timeout 10 \
+              --max-time 30 \
+              --retry 3 \
+              --retry-delay 10 \
+              --retry-all-errors \
+              "${url}"; then
+              echo
+              echo "Purged ${path}"
+              echo "::endgroup::"
+            else
+              echo "::error title=jsDelivr purge failed::Failed to purge ${path} after retries"
+              echo "::endgroup::"
+              exit 1
+            fi
+          done
