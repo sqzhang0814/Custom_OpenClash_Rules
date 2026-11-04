@@ -18,7 +18,9 @@ https://cdn.jsdelivr.net/gh/sqzhang0814/Custom_OpenClash_Rules@refs/heads/main/o
 
 在 OpenClash 的远程覆写模块中选择其中一个地址，并将模块变量 `EN_KEY1` 填为机场订阅链接。原方案下载 `Custom_Clash_Full.yaml`；个人定制方案下载 `Custom_Clash_Full_Personal.yaml`。两个方案相互独立，原方案的行为保持不变。
 
-个人定制方案额外包含 `Apple_Update`、`Apple_PKI`、`Apple_iCloud_CN` 和 `Apple_Dev_CN` 四个 MetaCubeX 规则提供者。系统更新与 PKI 默认进入 `🍎 苹果系统服务`（默认 `🎯 全球直连`，可切换地区组或具体节点），中国区 iCloud 与开发者服务默认进入仅含 `🎯 全球直连` 的 `🍎 苹果服务CN`。原有通用 `GEOSITE,apple` 规则继续指向 `🍎 苹果服务`。
+个人定制方案额外包含 `Apple_Update`、`Apple_PKI`、`Apple_iCloud_CN` 和 `Apple_Dev_CN` 四个 MetaCubeX 规则提供者。系统更新与 PKI 默认进入 `🍎 苹果系统服务`（默认 `🎯 全球直连`，可切换地区组或具体节点），中国区 iCloud 与开发者服务进入 `🍎 苹果服务CN`；该组与 `Ⓜ️ 微软服务CN` 同构，首项为 `🎯 全球直连`，并保留手动选择、自动选择和地区节点候选。原有通用 `GEOSITE,apple` 规则继续指向 `🍎 苹果服务`。
+
+两套方案共同生成 `Novix` 策略组，类型为 `fallback`，从 `provider1` 中按 `(?i)Novix` 关键字筛选节点。所有业务分流组将 `Novix` 放在第二个候选位置，便于手动切换；默认选中项不变，`Novix` 组内部按提供者中的节点顺序执行故障转移。
 
 两套方案共同加入 `Ⓜ️ 微软服务CN` 独立分流：使用 `Microsoft_CN` 规则提供者，默认 `🎯 全球直连`，选项同 `Ⓜ️ 微软服务`，规则位于 OneDrive/Bing 之后、通用 Microsoft 之前。Gemini 分流由上游原生提供（`GEOSITE,google-gemini` 指向 `🤖 Gemini`），生成器将其纳入业务组校验，保证可手动选择、保留 `provider1`，且规则必须位于通用国外 AI 与 Google 服务之前，避免 Gemini 域名被 `category-ai-!cn` 或 `GEOSITE,google` 先行命中。
 

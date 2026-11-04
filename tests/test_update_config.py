@@ -8,7 +8,13 @@ import update_config as config
 
 
 class BusinessProviderTests(unittest.TestCase):
-    group = '  - name: "Example"\n    type: select\n    proxies:\n      - "Region"\n'
+    group = (
+        '  - name: "Example"\n'
+        "    type: select\n"
+        "    proxies:\n"
+        '      - "🎯 全球直连"\n'
+        '      - "Region"\n'
+    )
     prefix = 'proxy-providers:\n  provider1:\n    type: http\nproxy-groups:\n'
     suffix = 'rules:\n  - "MATCH,Example"\n'
 
@@ -57,7 +63,15 @@ class BusinessProviderTests(unittest.TestCase):
             config.validate_rendered_yaml(source)
         rendered = config.render_yaml(source, ["DOMAIN,example.org,DIRECT"], "fixture")
         block = config.group_block(rendered, "Example")
-        self.assertEqual(block.replace("    use:\n      - provider1\n", ""), self.group)
+        self.assertEqual(
+            config.proxy_lines(block, "Example"),
+            [
+                '      - "🎯 全球直连"\n',
+                '      - "Novix"\n',
+                '      - "Region"\n',
+            ],
+        )
+        self.assertIn('  - name: "Novix"\n', rendered)
         self.assertIn('rules:\n  # Personal rules', rendered)
         self.assertLess(rendered.index("DOMAIN,example.org,DIRECT"), rendered.index("MATCH,Example"))
         config.validate_rendered_yaml(rendered)
@@ -119,6 +133,27 @@ class BusinessProviderTests(unittest.TestCase):
         rendered = config.ensure_business_provider_nodes(source)
         self.assertTrue(rendered.endswith(suffix))
 
+    def test_novix_is_inserted_into_select_groups_outside_business_list(self):
+        extra_group = (
+            '  - name: "Telegram Extra"\n'
+            "    type: select\n"
+            "    proxies:\n"
+            '      - "♻️ 自动选择"\n'
+        )
+        source = (
+            self.prefix
+            + self.group
+            + extra_group
+            + "rule-providers:\n"
+            "  Existing:\n"
+            "    type: http\n"
+            "rules:\n"
+            '  - "MATCH,Example"\n'
+        )
+        rendered = config.inject_novix_group(source)
+        rendered = config.inject_novix_candidates(rendered)
+        config.assert_novix_second(rendered, "Telegram Extra")
+
 
 class MicrosoftGeminiAndPersonalTests(unittest.TestCase):
     def setUp(self):
@@ -174,10 +209,14 @@ class MicrosoftGeminiAndPersonalTests(unittest.TestCase):
             config.proxy_lines(cn_block, "Ⓜ️ 微软服务CN"),
             [
                 '      - "🎯 全球直连"\n',
+                '      - "Novix"\n',
                 '      - "🚀 手动选择"\n',
                 '      - "♻️ 自动选择"\n',
             ],
         )
+        self.assertIn('  - name: "Novix"\n', rendered)
+        self.assertIn("    type: fallback\n", config.group_block(rendered, "Novix"))
+        self.assertIn("    filter: '(?i)Novix'\n", config.group_block(rendered, "Novix"))
         self.assertLess(rendered.index("GEOSITE,onedrive"), rendered.index("GEOSITE,bing"))
         self.assertLess(rendered.index("GEOSITE,bing"), rendered.index("RULE-SET,Microsoft_CN"))
         self.assertLess(
@@ -268,6 +307,86 @@ class MicrosoftGeminiAndPersonalTests(unittest.TestCase):
         ):
             with self.subTest(setting=old), self.assertRaises(ValueError):
                 config.validate_rendered_personal_conf(good.replace(old, new))
+
+
+class NovixAndAppleCnTests(unittest.TestCase):
+    def setUp(self):
+        business = patch.object(
+            config,
+            "BUSINESS_SELECT_GROUPS",
+            ("🍎 苹果服务", "Ⓜ️ 微软服务"),
+        )
+        regions = patch.object(config, "REGION_GROUPS", ())
+        business.start()
+        regions.start()
+        self.addCleanup(business.stop)
+        self.addCleanup(regions.stop)
+
+    def source(self):
+        candidates = (
+            "🎯 全球直连",
+            "🚀 手动选择",
+            "♻️ 自动选择",
+        )
+        group_lines = lambda name: (
+            f'  - name: "{name}"\n'
+            "    type: select\n"
+            "    proxies:\n"
+            + "".join(f'      - "{candidate}"\n' for candidate in candidates)
+        )
+        return (
+            "proxy-providers:\n"
+            "  provider1:\n"
+            "    type: http\n"
+            "proxy-groups:\n"
+            + group_lines("🍎 苹果服务")
+            + group_lines("Ⓜ️ 微软服务")
+            + "\nrule-providers:\n"
+            "  Existing:\n"
+            "    type: http\n"
+            "rules:\n"
+            '  - "GEOSITE,onedrive,💾 OneDrive"\n'
+            '  - "GEOSITE,bing,🤖 Copilot"\n'
+            '  - "GEOSITE,apple-tvplus,🎥 AppleTV+"\n'
+            '  - "GEOSITE,apple,🍎 苹果服务"\n'
+            '  - "GEOSITE,google-gemini,🤖 Gemini"\n'
+            '  - "GEOSITE,category-ai-!cn,🤖 国外AI服务"\n'
+            '  - "GEOSITE,microsoft,Ⓜ️ 微软服务"\n'
+            '  - "GEOSITE,google,🇬 谷歌服务"\n'
+            '  - "MATCH,🐟 漏网之鱼"\n'
+        )
+
+    def test_apple_cn_matches_microsoft_cn_and_novix_is_second(self):
+        rendered = config.render_apple_yaml(self.source(), [], "fixture")
+        apple_service = config.proxy_lines(
+            config.group_block(rendered, "🍎 苹果服务"),
+            "🍎 苹果服务",
+        )
+        apple_system = config.proxy_lines(
+            config.group_block(rendered, "🍎 苹果系统服务"),
+            "🍎 苹果系统服务",
+        )
+        apple_cn = config.proxy_lines(
+            config.group_block(rendered, "🍎 苹果服务CN"),
+            "🍎 苹果服务CN",
+        )
+        microsoft_cn = config.proxy_lines(
+            config.group_block(rendered, "Ⓜ️ 微软服务CN"),
+            "Ⓜ️ 微软服务CN",
+        )
+        expected_prefix = [
+            '      - "🎯 全球直连"\n',
+            '      - "Novix"\n',
+        ]
+        self.assertEqual(apple_service[:2], expected_prefix)
+        self.assertEqual(apple_system[:2], expected_prefix)
+        self.assertEqual(apple_cn[:2], expected_prefix)
+        self.assertEqual(apple_cn, microsoft_cn)
+        self.assertIn(
+            "    use:\n      - provider1\n",
+            config.group_block(rendered, "🍎 苹果服务CN"),
+        )
+        config.validate_rendered_apple_yaml(rendered, [])
 
 
 if __name__ == "__main__":

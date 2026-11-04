@@ -1,6 +1,6 @@
 {
   "upstream_repository": "Aethersailor/Custom_OpenClash_Rules",
-  "upstream_commit": "fb63fe62d770722235f1c196b7cf84c3cbe5de4e",
+  "upstream_commit": "bcfb61ffaa1c6730e29459d83cc993f254ae6e8a",
   "yaml_sha256": "954efb7df4910509509abcb0399000f1af0b46936093ffd8738c398f83cef9ff",
-  "overwrite_conf_sha256": "1eae787fa47b510037ec4c0f35d5fb6a6320723776c29860c4d721fe219ae8d1"
+  "overwrite_conf_sha256": "5067e42f51b297a835325ee2ea42fa36b5772670390e99f5cb9f61ef831c7f5a"
 }
