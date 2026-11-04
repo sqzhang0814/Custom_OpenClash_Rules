@@ -23,6 +23,7 @@ PERSONAL_OUTPUT_CONF = ROOT / "overwrite/yaml/Custom_Clash_Full_Personal.conf"
 METADATA = ROOT / "upstream-source.json"
 CUSTOM_RULES = ROOT / "custom-rules.yaml"
 PERSONAL_YAML_FILENAME = "Custom_Clash_Full_Personal.yaml"
+PERSONAL_DOWNLOAD_OPTIONS = ", force=false, cron=0 6 * * *, restart=true"
 
 MICROSOFT_CN_PROVIDER_NAME = "Microsoft_CN"
 MICROSOFT_CN_PROVIDER_URL = (
@@ -31,6 +32,14 @@ MICROSOFT_CN_PROVIDER_URL = (
 MICROSOFT_CN_GROUP = "Ⓜ️ 微软服务CN"
 MICROSOFT_CN_SOURCE_GROUP = "Ⓜ️ 微软服务"
 MICROSOFT_CN_RULE = f"RULE-SET,{MICROSOFT_CN_PROVIDER_NAME},{MICROSOFT_CN_GROUP}"
+
+NOVIX_GROUP = "Novix"
+NOVIX_FILTER = "(?i)Novix"
+NOVIX_EXCLUDED_SELECT_GROUPS = (
+    "🎯 全球直连",
+    "🔀 非标端口",
+    NOVIX_GROUP,
+)
 
 GEMINI_GROUP = "🤖 Gemini"
 # Upstream now provides the dedicated Gemini group and rule. Accept either
@@ -239,10 +248,19 @@ def ensure_business_provider_nodes(yaml_text: str) -> str:
 
 def validate_rendered_yaml(yaml_text: str) -> None:
     validate_upstream_yaml(yaml_text)
+    novix_block = group_block(yaml_text, NOVIX_GROUP)
+    if "    type: fallback\n" not in novix_block:
+        raise ValueError(f"{NOVIX_GROUP} must be a fallback group")
+    if "    use:\n      - provider1\n" not in novix_block:
+        raise ValueError(f"{NOVIX_GROUP} must expose provider1")
+    if f"    filter: '{NOVIX_FILTER}'\n" not in novix_block:
+        raise ValueError(f"{NOVIX_GROUP} must filter by {NOVIX_FILTER}")
     for name in BUSINESS_SELECT_GROUPS:
         use = business_use_list(group_block(yaml_text, name), name)
         if use is None or use[1].count("provider1") != 1:
             raise ValueError(f"Business group must expose provider1 exactly once: {name}")
+    for name in select_group_names(yaml_text):
+        assert_novix_second(yaml_text, name)
     microsoft_cn_block = group_block(yaml_text, MICROSOFT_CN_GROUP)
     if "    type: select\n" not in microsoft_cn_block:
         raise ValueError(f"{MICROSOFT_CN_GROUP} must be a select group")
@@ -252,6 +270,7 @@ def validate_rendered_yaml(yaml_text: str) -> None:
     microsoft_cn_lines = proxy_lines(microsoft_cn_block, MICROSOFT_CN_GROUP)
     if not microsoft_cn_lines or microsoft_cn_lines[0] != '      - "🎯 全球直连"\n':
         raise ValueError(f"{MICROSOFT_CN_GROUP} must start with 🎯 全球直连")
+    assert_novix_second(yaml_text, MICROSOFT_CN_GROUP)
     microsoft_rule = f'  - "{MICROSOFT_CN_RULE}"\n'
     onedrive_rule = '  - "GEOSITE,onedrive,💾 OneDrive"\n'
     bing_rule = '  - "GEOSITE,bing,🤖 Copilot"\n'
@@ -313,6 +332,8 @@ def render_yaml(upstream_yaml: str, personal_rules: list[str], source_url: str) 
     )
     rendered = upstream_yaml.replace(marker, insertion, 1)
     rendered = ensure_business_provider_nodes(rendered)
+    rendered = inject_novix_group(rendered)
+    rendered = inject_novix_candidates(rendered)
     rendered = inject_microsoft_cn(rendered)
     validate_rendered_yaml(rendered)
     return (
@@ -333,6 +354,80 @@ def proxy_lines(group_text: str, group_name: str) -> list[str]:
     return match.group("items").splitlines(keepends=True)
 
 
+NOVIX_GROUP_BLOCK = (
+    f'  - name: "{NOVIX_GROUP}"\n'
+    "    type: fallback\n"
+    "    use:\n"
+    "      - provider1\n"
+    f"    filter: '{NOVIX_FILTER}'\n"
+    "    url: https://www.gstatic.com/generate_204\n"
+    "    interval: 300\n"
+)
+
+
+def inject_novix_group(yaml_text: str) -> str:
+    header = f'  - name: "{NOVIX_GROUP}"\n'
+    if yaml_text.count(header):
+        raise ValueError(f"Novix group already exists: {NOVIX_GROUP}")
+
+    auto_header = '  - name: "♻️ 自动选择"\n'
+    if yaml_text.count(auto_header) > 1:
+        raise ValueError("Automatic selection group anchor is not unique")
+    if yaml_text.count(auto_header) == 1:
+        auto_block = group_block(yaml_text, "♻️ 自动选择")
+        return yaml_text.replace(auto_block, auto_block + NOVIX_GROUP_BLOCK, 1)
+
+    anchor = "proxy-groups:\n"
+    if yaml_text.count(anchor) != 1:
+        raise ValueError("proxy-groups insertion anchor is not unique")
+    return yaml_text.replace(anchor, anchor + NOVIX_GROUP_BLOCK, 1)
+
+
+def inject_novix_candidates(yaml_text: str) -> str:
+    novix_line = f'      - "{NOVIX_GROUP}"\n'
+    for name in select_group_names(yaml_text):
+        block = group_block(yaml_text, name)
+        lines = proxy_lines(block, name)
+        if novix_line in lines:
+            if lines.index(novix_line) == 1:
+                continue
+            raise ValueError(f"Novix must already be the second candidate: {name}")
+
+        first_proxy = re.search(
+            r"^    proxies:\n(?P<first>      - [^\n]*\n)",
+            block,
+            flags=re.MULTILINE,
+        )
+        if not first_proxy:
+            raise ValueError(f"Could not insert Novix into business group: {name}")
+        updated = (
+            block[: first_proxy.end()]
+            + novix_line
+            + block[first_proxy.end() :]
+        )
+        yaml_text = yaml_text.replace(block, updated, 1)
+    return yaml_text
+
+
+def select_group_names(yaml_text: str) -> list[str]:
+    names: list[str] = []
+    for match in re.finditer(r'^  - name: "([^"]+)"\n', yaml_text, flags=re.MULTILINE):
+        name = match.group(1)
+        if name in NOVIX_EXCLUDED_SELECT_GROUPS or name in names:
+            continue
+        block = group_block(yaml_text, name)
+        if "    type: select\n" in block:
+            names.append(name)
+    return names
+
+
+def assert_novix_second(yaml_text: str, group_name: str) -> None:
+    lines = proxy_lines(group_block(yaml_text, group_name), group_name)
+    expected = f'      - "{NOVIX_GROUP}"\n'
+    if len(lines) < 2 or lines[1] != expected:
+        raise ValueError(f"Novix must be the second candidate: {group_name}")
+
+
 def inject_apple_groups(yaml_text: str) -> str:
     if len(re.findall(r'^  - name: "🍎 苹果服务CN"\s*$', yaml_text, flags=re.MULTILINE)):
         raise ValueError("Apple group already exists: 🍎 苹果服务CN")
@@ -343,7 +438,12 @@ def inject_apple_groups(yaml_text: str) -> str:
     direct_line = '      - "🎯 全球直连"\n'
     source_lines = proxy_lines(source_block, "🍎 苹果服务")
     source_without_direct = [line for line in source_lines if line != direct_line]
-    required_candidates = ("🚀 手动选择", "♻️ 自动选择", *REGION_GROUPS)
+    required_candidates = (
+        NOVIX_GROUP,
+        "🚀 手动选择",
+        "♻️ 自动选择",
+        *REGION_GROUPS,
+    )
     for candidate in required_candidates:
         expected_line = f'      - "{candidate}"\n'
         if source_without_direct.count(expected_line) != 1:
@@ -370,11 +470,14 @@ def inject_apple_groups(yaml_text: str) -> str:
         + system_block[proxy_match.end("items") :]
     )
 
-    apple_cn_block = (
-        '  - name: "🍎 苹果服务CN"\n'
-        "    type: select\n"
-        "    proxies:\n"
-        '      - "🎯 全球直连"\n'
+    microsoft_cn_header = f'  - name: "{MICROSOFT_CN_GROUP}"\n'
+    microsoft_cn_block = group_block(yaml_text, MICROSOFT_CN_GROUP)
+    if microsoft_cn_block.count(microsoft_cn_header) != 1:
+        raise ValueError("Microsoft CN group anchor is not unique")
+    apple_cn_block = microsoft_cn_block.replace(
+        microsoft_cn_header,
+        '  - name: "🍎 苹果服务CN"\n',
+        1,
     )
     inserted = apple_cn_block + system_block + source_block
     if yaml_text.count(source_block) != 1:
@@ -530,10 +633,18 @@ def validate_rendered_apple_yaml(yaml_text: str, personal_rules: list[str]) -> N
             raise ValueError(f"Apple provider definition is incomplete: {name}")
 
     cn_block = group_block(yaml_text, "🍎 苹果服务CN")
-    if "    type: select\n" not in cn_block or "    use:\n" in cn_block:
-        raise ValueError("🍎 苹果服务CN must be a standalone select group")
-    if proxy_lines(cn_block, "🍎 苹果服务CN") != ['      - "🎯 全球直连"\n']:
-        raise ValueError("🍎 苹果服务CN must contain only 🎯 全球直连")
+    microsoft_cn_block = group_block(yaml_text, MICROSOFT_CN_GROUP)
+    if "    type: select\n" not in cn_block:
+        raise ValueError("🍎 苹果服务CN must be a select group")
+    cn_use = business_use_list(cn_block, "🍎 苹果服务CN")
+    microsoft_cn_use = business_use_list(microsoft_cn_block, MICROSOFT_CN_GROUP)
+    if cn_use is None or microsoft_cn_use is None or cn_use[1] != microsoft_cn_use[1]:
+        raise ValueError("🍎 苹果服务CN must use the same providers as Microsoft CN")
+    if proxy_lines(cn_block, "🍎 苹果服务CN") != proxy_lines(
+        microsoft_cn_block, MICROSOFT_CN_GROUP
+    ):
+        raise ValueError("🍎 苹果服务CN must have the same candidates as Microsoft CN")
+    assert_novix_second(yaml_text, "🍎 苹果服务CN")
 
     system_block = group_block(yaml_text, "🍎 苹果系统服务")
     if "    type: select\n" not in system_block:
@@ -543,11 +654,17 @@ def validate_rendered_apple_yaml(yaml_text: str, personal_rules: list[str]) -> N
     system_lines = proxy_lines(system_block, "🍎 苹果系统服务")
     if not system_lines or system_lines[0] != '      - "🎯 全球直连"\n':
         raise ValueError("🍎 苹果系统服务 must start with 🎯 全球直连")
-    required_candidates = ("🚀 手动选择", "♻️ 自动选择", *REGION_GROUPS)
+    required_candidates = (
+        NOVIX_GROUP,
+        "🚀 手动选择",
+        "♻️ 自动选择",
+        *REGION_GROUPS,
+    )
     for candidate in required_candidates:
         expected_line = f'      - "{candidate}"\n'
         if system_lines.count(expected_line) != 1:
             raise ValueError(f"🍎 苹果系统服务 is missing candidate: {candidate}")
+    assert_novix_second(yaml_text, "🍎 苹果系统服务")
 
     ordered_rules = [
         f'  - "RULE-SET,{provider},{group}"\n' for provider, group in APPLE_RULES
@@ -600,6 +717,19 @@ def render_conf(
         raise ValueError("Could not replace the YAML download URL in upstream overwrite module")
     if yaml_filename != "Custom_Clash_Full.yaml":
         rendered = rendered.replace("Custom_Clash_Full.yaml", yaml_filename)
+    if yaml_filename == PERSONAL_YAML_FILENAME:
+        # Use the cached template at startup. OpenClash's native cron downloader
+        # refreshes it daily and restarts after a successful download.
+        rendered, count = re.subn(
+            r"(?m)^(DOWNLOAD_FILE\s*=.*)$",
+            lambda match: re.sub(
+                r",\s*(?:force|cron|restart)\s*=[^,\n]*", "", match[0]
+            ) + PERSONAL_DOWNLOAD_OPTIONS,
+            rendered,
+            count=1,
+        )
+        if count != 1:
+            raise ValueError("Personal module must have exactly one download job")
     return (
         "# GENERATED FILE — source module is synchronized by GitHub Actions.\n"
         f"# Source: {source_url}\n"
@@ -621,6 +751,9 @@ def validate_rendered_personal_conf(conf_text: str) -> None:
         raise ValueError("Personal overwrite module still references the original YAML filename")
     if f"CONFIG_FILE = {expected_path}" not in conf_text:
         raise ValueError("Personal overwrite module has an unexpected CONFIG_FILE")
+    downloads = re.findall(r"(?m)^DOWNLOAD_FILE\s*=.*$", conf_text)
+    if len(downloads) != 1 or not downloads[0].endswith(PERSONAL_DOWNLOAD_OPTIONS):
+        raise ValueError("Personal module must use cached startup and native daily updates")
 
 
 def write_text(path: Path, text: str) -> None:

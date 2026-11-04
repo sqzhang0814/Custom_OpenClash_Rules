@@ -18,7 +18,9 @@ https://cdn.jsdelivr.net/gh/sqzhang0814/Custom_OpenClash_Rules@refs/heads/main/o
 
 在 OpenClash 的远程覆写模块中选择其中一个地址，并将模块变量 `EN_KEY1` 填为机场订阅链接。原方案下载 `Custom_Clash_Full.yaml`；个人定制方案下载 `Custom_Clash_Full_Personal.yaml`。两个方案相互独立，原方案的行为保持不变。
 
-个人定制方案额外包含 `Apple_Update`、`Apple_PKI`、`Apple_iCloud_CN` 和 `Apple_Dev_CN` 四个 MetaCubeX 规则提供者。系统更新与 PKI 默认进入 `🍎 苹果系统服务`（默认 `🎯 全球直连`，可切换地区组或具体节点），中国区 iCloud 与开发者服务默认进入仅含 `🎯 全球直连` 的 `🍎 苹果服务CN`。原有通用 `GEOSITE,apple` 规则继续指向 `🍎 苹果服务`。
+个人定制方案额外包含 `Apple_Update`、`Apple_PKI`、`Apple_iCloud_CN` 和 `Apple_Dev_CN` 四个 MetaCubeX 规则提供者。系统更新与 PKI 默认进入 `🍎 苹果系统服务`（默认 `🎯 全球直连`，可切换地区组或具体节点），中国区 iCloud 与开发者服务进入 `🍎 苹果服务CN`；该组与 `Ⓜ️ 微软服务CN` 同构，首项为 `🎯 全球直连`，并保留手动选择、自动选择和地区节点候选。原有通用 `GEOSITE,apple` 规则继续指向 `🍎 苹果服务`。
+
+两套方案共同生成 `Novix` 策略组，类型为 `fallback`，从 `provider1` 中按 `(?i)Novix` 关键字筛选节点。所有业务分流组将 `Novix` 放在第二个候选位置，便于手动切换；默认选中项不变，`Novix` 组内部按提供者中的节点顺序执行故障转移。
 
 两套方案共同加入 `Ⓜ️ 微软服务CN` 独立分流：使用 `Microsoft_CN` 规则提供者，默认 `🎯 全球直连`，选项同 `Ⓜ️ 微软服务`，规则位于 OneDrive/Bing 之后、通用 Microsoft 之前。Gemini 分流由上游原生提供（`GEOSITE,google-gemini` 指向 `🤖 Gemini`），生成器将其纳入业务组校验，保证可手动选择、保留 `provider1`，且规则必须位于通用国外 AI 与 Google 服务之前，避免 Gemini 域名被 `category-ai-!cn` 或 `GEOSITE,google` 先行命中。
 
@@ -33,6 +35,14 @@ GitHub Actions 每日检查一次上游 `Aethersailor/Custom_OpenClash_Rules` �
 5. 验证两个 YAML 可解析后再提交。
 
 上游结构不再满足这些条件时，工作流会失败并保留上一版有效配置。可在仓库 **Actions** 页面手动运行 `Sync custom OpenClash YAML` 立即更新。
+
+### Personal 模板：缓存启动与每日更新（待路由器兼容性验收）
+
+Personal 的 `DOWNLOAD_FILE` 设置为 `force=false, cron=0 6 * * *, restart=true`。已有本地模板时启动直接使用；首次没有模板时需要联网下载。原生定时任务按路由器本地时间每天 06:00 下载模板，成功后重启应用，内容相同也允许应用；下载失败则保留旧文件和现有服务。服务器返回 HTTP 304 时，OpenClash 会跳过重启。
+
+方案只使用 OpenClash 自带功能，不需要安装独立更新器或额外维护脚本。模块设置页更新的是 `.conf` 模块文件，`DOWNLOAD_FILE` 的定时任务更新的是 `.yaml` 模板，两者分别处理。
+
+**当前兼容性限制：** 2026-10-25 对 OpenClash 0.48.009 当前启动脚本进行了隔离执行验证：模板定时任务创建后，被后续 `add_cron` 清理，仅模块定时任务被重建。因此该版本不能仅靠这些参数实现每日模板更新。本分支保留参数方案供后续验证，尚未部署；需先确认所用版本已解决任务清理问题，再合入正式配置。不要将生成成功视为自动更新已生效。
 
 ## 修改个人规则
 
